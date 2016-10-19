@@ -1,4 +1,4 @@
-ï»¿<#
+<#
 .SYNOPSIS
 Test-ExchangeServerHealth.ps1 - Exchange Server Health Check Script.
 
@@ -43,29 +43,22 @@ Checks the server HO-EX2010-MB1 and outputs the results to the shell window.
 .\Test-ExchangeServerHealth.ps1 -ReportMode -SendEmail
 Checks all servers in the organization, outputs the results to the shell window, a HTML report, and
 emails the HTML report to the address configured in the script.
-
 .LINK
 http://exchangeserverpro.com/powershell-script-health-check-report-exchange-2010
-
 .NOTES
 Written by: Paul Cunningham
-
 Find me on:
-
 * My Blog:	http://paulcunningham.me
 * Twitter:	https://twitter.com/paulcunningham
 * LinkedIn:	http://au.linkedin.com/in/cunninghamp/
 * Github:	https://github.com/cunninghamp
-
 For more Exchange Server tips, tricks and news
 check out Exchange Server Pro.
-
 * Website:	http://exchangeserverpro.com
 * Twitter:	http://twitter.com/exchservpro
-
 Additional Credits (code contributions and testing):
 - Chris Brown, http://twitter.com/chrisbrownie
-- Ingmar BrÃ¼ckner
+- Ingmar Brückner
 - John A. Eppright
 - Jonas Borelius
 - Thomas Helmdach
@@ -73,23 +66,17 @@ Additional Credits (code contributions and testing):
 - Tony Holdgate
 - Ryan
 - Rob Silver
-
 License:
-
 The MIT License (MIT)
-
 Copyright (c) 2015 Paul Cunningham
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
-
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -97,7 +84,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
 Change Log
 V1.00, 5/07/2012 - Initial version
 V1.01, 5/08/2012 - Minor bug fixes and removed Edge Tranport checks
@@ -124,6 +110,7 @@ V1.12, 5/03/2015 - Fixed bug with color-coding in report for Transport Queue len
 V1.13, 7/03/2015 - Fixed bug with incorrect function name used sometimes when trying to call Write-LogFile
 V1.14, 21/5/2015 - Fixed bug with color-coding in report for Transport Queue length on CAS-only Exchange 2013 servers.
 V1.15, 18/11/2015 - Fixed bug with Exchange 2016 version detection.
+V1.15a, 19/10/2016 - Fixed bug with DAG member server name showing as blank, sorted DAG members by name order ascending, and added database size and free whitespace
 #>
 
 #requires -version 2
@@ -191,7 +178,6 @@ $logfile = "$myDir\exchangeserverhealth.log"
 # Modify these Email Settings
 #...................................
 
-$smtpsettings = @{
 	To =  "administrator@exchangeserverpro.net"
 	From = "exchangeserver@exchangeserverpro.net"
 	Subject = "$reportemailsubject - $now"
@@ -804,7 +790,7 @@ foreach ($server in $exchangeservers)
 			}
 			else
 			{
-				$timespan = $OS.ConvertToDateTime($OS.LocalDateTime) â€“ $OS.ConvertToDateTime($OS.LastBootUpTime)
+				$timespan = $OS.ConvertToDateTime($OS.LocalDateTime) – $OS.ConvertToDateTime($OS.LastBootUpTime)
 				[int]$uptime = "{0:00}" -f $timespan.TotalHours
 				Switch ($uptime -gt 23) {
 				    $true { Write-Host -ForegroundColor $pass $uptime }
@@ -961,7 +947,7 @@ foreach ($server in $exchangeservers)
 						if ($Log) {Write-Logfile $string36}
 						Write-Host "Total Queue: " -NoNewline; 
 						try {
-							$q = Get-Queue -server $server -ErrorAction Stop
+							$q = Get-Queue -server $server -ErrorAction Stop | Where {$_.Identity -notlike "*Shadow*"}
 						}
 						catch {
 							$serversummary += "$server - $string6"
@@ -1306,7 +1292,7 @@ if ($($dags.count) -gt 0)
 		Write-Verbose $tmpstring
 		if ($Log) {Write-Logfile $tmpstring}
 		
-		$dagmembers = @($dag | Select-Object -ExpandProperty Servers | Sort-Object Name)
+		$dagmembers = @($dag | Select-Object -ExpandProperty Servers | Sort-Object Name -Descending:$false)
 		$tmpstring = "$($dagmembers.count) DAG members found"
 		Write-Verbose $tmpstring
 		if ($Log) {Write-Logfile $tmpstring}
@@ -1360,9 +1346,17 @@ if ($($dags.count) -gt 0)
 				"Lagged Queues" = $null
 				"Healthy Indexes" = $null
 				"Unhealthy Indexes" = $null
+				"Database Size" = $null
+				"Database Free Whitespace" = $null
 				}
 			$databaseObj = New-Object PSObject -Property $objectHash
 
+			$databasesize = $database.DatabaseSize
+			$databaseObj | Add-Member NoteProperty -Name "Database Size" -Value $databasesize -Force
+			
+			$databaseavailablewhitespace = $database.AvailableNewMailboxSpace
+			$databaseObj | Add-Member NoteProperty -Name "Database Free Whitespace" -Value $databaseavailablewhitespace -Force
+			
 			$dbcopystatus = @($database | Get-MailboxDatabaseCopyStatus)
 			$tmpstring = "$database has $($dbcopystatus.Count) copies"
 			Write-Verbose $tmpstring
@@ -1526,6 +1520,7 @@ if ($($dags.count) -gt 0)
 		}
 		
 		#Get Test-Replication Health results for each DAG member
+		$dagmembers = $dagmembers | Sort $_ -Descending:$false
 		foreach ($dagmember in $dagmembers)
 		{
             $replicationhealth = $null
@@ -1551,7 +1546,7 @@ if ($($dags.count) -gt 0)
                                         }
 
 			$memberObj = New-Object PSObject -Property $replicationhealthitems
-			$memberObj | Add-Member NoteProperty -Name "Server" -Value $($dagmember.Name)
+			$memberObj | Add-Member NoteProperty -Name "Server" -Value $($dagmember)
 		
 			$tmpstring = "---- Checking replication health for $($dagmember.Name)"
 			Write-Verbose $tmpstring
@@ -1589,10 +1584,6 @@ if ($($dags.count) -gt 0)
 		#Generate the HTML from the DAG health checks
 		if ($SendEmail -or $ReportFile)
 		{
-		
-			####Begin Summary Table HTML
-			$dagdatabaseSummaryHtml = $null
-			#Begin Summary table HTML header
 			$htmltableheader = "<p>
 							<table>
 							<tr>
@@ -1607,6 +1598,8 @@ if ($($dags.count) -gt 0)
 							<th>Lagged Queues</th>
 							<th>Healthy Indexes</th>
 							<th>Unhealthy Indexes</th>
+							<th>Database Size</th>
+							<th>Database Free Whitespace</th>
 							</tr>"
 
 			$dagdatabaseSummaryHtml += $htmltableheader
@@ -1744,6 +1737,32 @@ if ($($dags.count) -gt 0)
 					}
 				}
 				
+				if ($($line."Total Copies") -eq $($line."Database Size"))
+				{
+					$htmltablerow += "<td class=""fail"">$($line."Database Size")</td>"
+				}
+				else
+				{
+					switch ($($line."Database Size"))
+					{
+						0 { $htmltablerow += "<td>$($line."Database Size")</td>" }
+						default { $htmltablerow += "<td>$($line."Database Size")</td>" }
+					}
+				}
+				
+				if ($($line."Total Copies") -eq $($line."Database Free Whitespace"))
+				{
+					$htmltablerow += "<td>$($line."Database Free Whitespace")</td>"
+				}
+				else
+				{
+					switch ($($line."Database Free Whitespace"))
+					{
+						0 { $htmltablerow += "<td>$($line."Database Free Whitespace")</td>" }
+						default { $htmltablerow += "<td>$($line."Database Free Whitespace")</td>" }
+					}
+				}
+												
 				$htmltablerow += "</tr>"
 				$dagdatabaseSummaryHtml += $htmltablerow
 			}
@@ -2132,4 +2151,3 @@ if ($ReportMode -or $SendEmail)
 
 Write-Host $string15
 if ($Log) {Write-Logfile $string15}
-
